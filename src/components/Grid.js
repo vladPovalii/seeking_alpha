@@ -1,127 +1,97 @@
 // @flow
-import React, {useState, useRef, useCallback, useEffect} from 'react';
+import React, {useState, useCallback, useEffect, useRef} from 'react';
 
-import GridView from '../components/GridView';
-import useDelay from '../hooks/useDelay';
-import {getRandomBinary} from './utils';
+type Props = {
+    size: number,
+    delay: number,
+    isRunning: boolean,
+};
 
-const getInitialState = size => {
-    return [...Array(size).keys()].map(() => {
-        return [...Array(size).keys()].map(() => getRandomBinary());
+const getInitialState = (size: number) => {
+    return Array(size).fill(0).map(() => {
+        // seed random binary:
+        return Array(size).fill(0).map(() => Math.round(Math.random()));
     });
 };
 
-const getLivingNeighboursCount = (grid, x, y) => {
-    let livingCount = 0;
+const getAliveNeighboursCount = (grid: Array<Array<number>>, x: number, y: number): number => {
+    let aliveCount: number = 0;
 
-    // edge cases
-    const [xMin, xMax] = x === 0 ? [0, x + 1] : x === grid.length - 1 ? [x - 1, x] : [x - 1, x + 1];
-    const [yMin, yMax] = y === 0 ? [0, y + 1] : y === grid.length - 1 ? [y - 1, y] : [y - 1, y + 1];
+    // handle edge cases
+    const [xFrom: number, xTo: number] = x === 0 ? [0, x + 1] : x === grid.length - 1 ? [x - 1, x] : [x - 1, x + 1];
+    const [yFrom: number, yTo: number] = y === 0 ? [0, y + 1] : y === grid.length - 1 ? [y - 1, y] : [y - 1, y + 1];
 
-    for (let i = xMin; i <= xMax; i++) {
-        for (let j = yMin; j <= yMax; j++) {
-            livingCount += grid[i][j];
+    // count all nearest cells
+    for (let i = xFrom; i <= xTo; i++) {
+        for (let j = yFrom; j <= yTo; j++) {
+            aliveCount += grid[i][j];
         }
     }
 
-    // exclude self
-    livingCount = livingCount - grid[x][y];
+    // exclude self!
+    aliveCount = aliveCount - grid[x][y];
 
-    return livingCount;
+    return aliveCount;
 };
 
-const getNextCellState = (isAlive, neighboursCount) => {
-    if (isAlive) {
-        // Any live cell with fewer than two live neighbours dies (underpopulation).
-        // Any live cell with two or three live neighbours lives on to the next generation.
-        // Any live cell with more than three live neighbours dies (overcrowding).
-        return neighboursCount === 2 || neighboursCount === 3 ? 1 : 0;
-    }
-    // Any dead cell with exactly three live neighbours becomes a live cell (reproduction).
-    return neighboursCount === 3 ? 1 : 0;
-}
-
-// const getNextGridState = grid => {
-//     const copy = JSON.parse(JSON.stringify(grid));
-//     for (let x = 0; x < copy.length; x++) {
-//         for (let y = 0; y < copy.length; y++) {
-//             const livingCount = getLivingNeighboursCount(copy, x, y);
-//             const isAlive = !!copy[x][y];
-//             copy[x][y] = getNextCellState(isAlive, livingCount);
-//         }
-//     }
-//     return copy;
-// };
-
-const getNextGridState = grid => {
-    return grid.map((row, x) => {
-        return row.map((value, y) => {
-            const livingCount = getLivingNeighboursCount(grid, x, y);
-            const isAlive = !!value;
+const getNextGridState = (grid: Array<Array<number>>): Array<Array<number>> => {
+    return grid.map((row: Array<number>, x: number) => {
+        return row.map((value: number, y: number) => {
+            const aliveCount: number = getAliveNeighboursCount(grid, x, y);
+            const isAlive: boolean = !!value;
             if (isAlive) {
                 // Any live cell with fewer than two live neighbours dies (underpopulation).
                 // Any live cell with two or three live neighbours lives on to the next generation.
                 // Any live cell with more than three live neighbours dies (overcrowding).
-                return livingCount === 2 || livingCount === 3 ? 1 : 0;
+                return aliveCount === 2 || aliveCount === 3 ? 1 : 0;
             }
             // Any dead cell with exactly three live neighbours becomes a live cell (reproduction).
-            return livingCount === 3 ? 1 : 0;
+            return aliveCount === 3 ? 1 : 0;
         });
     });
-}
+};
 
-const Grid = ({size, initialDelay}) => {
-
+const Grid = (props: Props) => {
+    const { size, delay, isRunning } = props;
     const [grid, setGrid] = useState(getInitialState(size));
-    const [running, setRunning] = useState(false);
-    const [delay, setDelay] = useState(initialDelay);
 
-    const runningRef = useRef(running);
-    runningRef.current = running;
+    const runningRef = useRef(isRunning);
 
-    const runSimulation = useCallback(() => {
-        if (!runningRef.current) {
-            return;
-        }
+    const processTick = useCallback(() => {
+        if(!runningRef.current) return;
 
-        setGrid((g) => getNextGridState(g));
+        setGrid(prev => getNextGridState(prev));
+        setTimeout(processTick, delay);
+    }, [delay]);
 
-        setTimeout(runSimulation, 50
-        );
-    }, []);
+    useEffect(() => {
+        runningRef.current = isRunning;
+        if (isRunning) processTick();
+    }, [isRunning]);
 
     return (
-        <>
-            <button
-                onClick={() => {
-                    setRunning(!running);
-                    if (!running) {
-                        runningRef.current = true;
-                        runSimulation();
-                    }
-                }}
-            >
-                {running ? "stop" : "start"}
-            </button>
-            <button>
-                Generate new
-            </button>
-
-            {/*<GridView grid={grid}/>*/}
+        <div style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${size}, 15px)`
+        }}>
             {grid.map((row, i) => (
-                <div key={i} style={{display: 'flex', flexDirection: 'row'}}>
-                    {row.map((value, j) => <div
-                        style={{width: 10, height: 10, backgroundColor: value ? 'black' : 'white'}}
-                        key={`${i}-${j}`}/>)}
-                </div>
+                row.map((value, j) => <div
+                    style={{
+                        width: 15,
+                        height: 15,
+                        backgroundColor: value ? 'black' : 'white',
+                        border: "solid thin grey"
+                    }}
+                    key={`${i}-${j}`}
+                />)
             ))}
-        </>
+        </div>
     )
 };
 
 Grid.defaultProps = {
     size: 50,
-    delay: 50 // ms
+    delay: 25 // ms
 };
 
 export default Grid;
